@@ -14,10 +14,10 @@ import (
 
 const confirmParticipant = `-- name: ConfirmParticipant :exec
 SELECT
-  "id", "trip_id", "email", "is_confirmed"
+    "id", "trip_id", "email", "is_confirmed"
 FROM participants
 WHERE
-  id = $1
+    id = $1
 `
 
 func (q *Queries) ConfirmParticipant(ctx context.Context, id uuid.UUID) error {
@@ -27,15 +27,15 @@ func (q *Queries) ConfirmParticipant(ctx context.Context, id uuid.UUID) error {
 
 const createActivity = `-- name: CreateActivity :one
 INSERT INTO activities
-  ( "trip_id", "title", "occurs_at" ) VALUES
-  ( $1, $2, $3 )
+    ( "trip_id", "title", "occurs_at" ) VALUES
+    ( $1, $2, $3 )
 RETURNING "id"
 `
 
 type CreateActivityParams struct {
-	TripID   uuid.UUID
-	Title    string
-	OccursAt pgtype.Timestamp
+	TripID   uuid.UUID        `db:"trip_id" json:"trip_id"`
+	Title    string           `db:"title" json:"title"`
+	OccursAt pgtype.Timestamp `db:"occurs_at" json:"occurs_at"`
 }
 
 func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) (uuid.UUID, error) {
@@ -47,15 +47,15 @@ func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) 
 
 const createTripLink = `-- name: CreateTripLink :one
 INSERT INTO links
-  ( "trip_id", "title", "url" ) VALUES
-  ( $1, $2, $3 )
+    ( "trip_id", "title", "url" ) VALUES
+    ( $1, $2, $3 )
 RETURNING "id"
 `
 
 type CreateTripLinkParams struct {
-	TripID uuid.UUID
-	Title  string
-	Url    string
+	TripID uuid.UUID `db:"trip_id" json:"trip_id"`
+	Title  string    `db:"title" json:"title"`
+	Url    string    `db:"url" json:"url"`
 }
 
 func (q *Queries) CreateTripLink(ctx context.Context, arg CreateTripLinkParams) (uuid.UUID, error) {
@@ -67,10 +67,10 @@ func (q *Queries) CreateTripLink(ctx context.Context, arg CreateTripLinkParams) 
 
 const getParticipant = `-- name: GetParticipant :one
 SELECT
-  "id", "trip_id", "email", "is_confirmed"
+    "id", "trip_id", "email", "is_confirmed"
 FROM participants
 WHERE
-  id = $1
+    id = $1
 `
 
 func (q *Queries) GetParticipant(ctx context.Context, id uuid.UUID) (Participant, error) {
@@ -87,10 +87,10 @@ func (q *Queries) GetParticipant(ctx context.Context, id uuid.UUID) (Participant
 
 const getParticipants = `-- name: GetParticipants :many
 SELECT
-  "id", "trip_id", "email", "is_confirmed"
+    "id", "trip_id", "email", "is_confirmed"
 FROM participants
 WHERE
-  trip_id = $1
+    trip_id = $1
 `
 
 func (q *Queries) GetParticipants(ctx context.Context, tripID uuid.UUID) ([]Participant, error) {
@@ -119,28 +119,22 @@ func (q *Queries) GetParticipants(ctx context.Context, tripID uuid.UUID) ([]Part
 }
 
 const getTrip = `-- name: GetTrip :one
-SELECT 
-  "destination", "owner_email", "owner_name", "starts_at", "ends_at"
+SELECT
+    "id", "destination", "owner_email", "owner_name", "is_confirmed", "starts_at", "ends_at"
 FROM trips
-WHERE 
-  id = $1
+WHERE
+    id = $1
 `
 
-type GetTripRow struct {
-	Destination string
-	OwnerEmail  string
-	OwnerName   string
-	StartsAt    pgtype.Timestamp
-	EndsAt      pgtype.Timestamp
-}
-
-func (q *Queries) GetTrip(ctx context.Context, id uuid.UUID) (GetTripRow, error) {
+func (q *Queries) GetTrip(ctx context.Context, id uuid.UUID) (Trip, error) {
 	row := q.db.QueryRow(ctx, getTrip, id)
-	var i GetTripRow
+	var i Trip
 	err := row.Scan(
+		&i.ID,
 		&i.Destination,
 		&i.OwnerEmail,
 		&i.OwnerName,
+		&i.IsConfirmed,
 		&i.StartsAt,
 		&i.EndsAt,
 	)
@@ -149,10 +143,10 @@ func (q *Queries) GetTrip(ctx context.Context, id uuid.UUID) (GetTripRow, error)
 
 const getTripActivities = `-- name: GetTripActivities :many
 SELECT
-  "id", "trip_id", "title", "occurs_at"
+    "id", "trip_id", "title", "occurs_at"
 FROM activities
 WHERE
-  trip_id = $1
+    trip_id = $1
 `
 
 func (q *Queries) GetTripActivities(ctx context.Context, tripID uuid.UUID) ([]Activity, error) {
@@ -182,10 +176,10 @@ func (q *Queries) GetTripActivities(ctx context.Context, tripID uuid.UUID) ([]Ac
 
 const getTripLinks = `-- name: GetTripLinks :many
 SELECT
-  "id", "trip_id", "title", "url"
+    "id", "trip_id", "title", "url"
 FROM links
 WHERE
-  trip_id = $1
+    trip_id = $1
 `
 
 func (q *Queries) GetTripLinks(ctx context.Context, tripID uuid.UUID) ([]Link, error) {
@@ -213,23 +207,24 @@ func (q *Queries) GetTripLinks(ctx context.Context, tripID uuid.UUID) ([]Link, e
 	return items, nil
 }
 
-const insetTrip = `-- name: InsetTrip :one
-INSERT INTO trips
-  ( "destination", "owner_email", "owner_name", "starts_at", "ends_at" ) VALUES
-  ( $1, $2, $3, $4, $5 )
+const insertTrip = `-- name: InsertTrip :one
+INSERT
+INTO trips
+    ( "destination", "owner_email", "owner_name", "starts_at", "ends_at") VALUES
+    ( $1, $2, $3, $4, $5 )
 RETURNING "id"
 `
 
-type InsetTripParams struct {
-	Destination string
-	OwnerEmail  string
-	OwnerName   string
-	StartsAt    pgtype.Timestamp
-	EndsAt      pgtype.Timestamp
+type InsertTripParams struct {
+	Destination string           `db:"destination" json:"destination"`
+	OwnerEmail  string           `db:"owner_email" json:"owner_email"`
+	OwnerName   string           `db:"owner_name" json:"owner_name"`
+	StartsAt    pgtype.Timestamp `db:"starts_at" json:"starts_at"`
+	EndsAt      pgtype.Timestamp `db:"ends_at" json:"ends_at"`
 }
 
-func (q *Queries) InsetTrip(ctx context.Context, arg InsetTripParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, insetTrip,
+func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertTrip,
 		arg.Destination,
 		arg.OwnerEmail,
 		arg.OwnerName,
@@ -242,27 +237,27 @@ func (q *Queries) InsetTrip(ctx context.Context, arg InsetTripParams) (uuid.UUID
 }
 
 type InviteParticipantsToTripParams struct {
-	TripID uuid.UUID
-	Email  string
+	TripID uuid.UUID `db:"trip_id" json:"trip_id"`
+	Email  string    `db:"email" json:"email"`
 }
 
 const updateTrip = `-- name: UpdateTrip :exec
 UPDATE trips
-SET
-  "destination" = $1,
-  "ends_at" = $2,
-  "starts_at" = $3,
-  "is_confirmed" = $4
+SET 
+    "destination" = $1,
+    "ends_at" = $2,
+    "starts_at" = $3,
+    "is_confirmed" = $4
 WHERE
-  id = $5
+    id = $5
 `
 
 type UpdateTripParams struct {
-	Destination string
-	EndsAt      pgtype.Timestamp
-	StartsAt    pgtype.Timestamp
-	IsConfirmed bool
-	ID          uuid.UUID
+	Destination string           `db:"destination" json:"destination"`
+	EndsAt      pgtype.Timestamp `db:"ends_at" json:"ends_at"`
+	StartsAt    pgtype.Timestamp `db:"starts_at" json:"starts_at"`
+	IsConfirmed bool             `db:"is_confirmed" json:"is_confirmed"`
+	ID          uuid.UUID        `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateTrip(ctx context.Context, arg UpdateTripParams) error {
