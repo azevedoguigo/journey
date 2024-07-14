@@ -12,8 +12,9 @@ import (
 
 	"github.com/azevedoguigo/journey.git/internal/api"
 	"github.com/azevedoguigo/journey.git/internal/api/spec"
+	mailpit "github.com/azevedoguigo/journey.git/internal/mailer"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/phenpessoa/gutils/netutils/httputils"
 	"go.uber.org/zap"
@@ -29,7 +30,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
-	fmt.Println("Goodbye :)")
+	fmt.Println("goodbye :)")
 }
 
 func run(ctx context.Context) error {
@@ -44,13 +45,12 @@ func run(ctx context.Context) error {
 	logger = logger.Named("journey_app")
 	defer func() { _ = logger.Sync() }()
 
-	pool, err := pgxpool.New(ctx, fmt.Sprintf(
-		"host=%s port=%s dbname=%s user=%s password=%s",
+	pool, err := pgxpool.New(ctx, fmt.Sprintf("user=%s password=%s host=%s port=%s dbname=%s",
+		os.Getenv("JOURNEY_DATABASE_USER"),
+		os.Getenv("JOURNEY_DATABASE_PASSWORD"),
 		os.Getenv("JOURNEY_DATABASE_HOST"),
 		os.Getenv("JOURNEY_DATABASE_PORT"),
 		os.Getenv("JOURNEY_DATABASE_NAME"),
-		os.Getenv("JOURNEY_DATABASE_USER"),
-		os.Getenv("JOURNEY_DATABASE_PASSWORD"),
 	))
 	if err != nil {
 		return err
@@ -61,14 +61,20 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	serverInterface := api.NewAPi(pool, logger)
-	router := chi.NewMux()
-	router.Use(middleware.RequestID, middleware.Recoverer, httputils.ChiLogger(logger))
-	router.Mount("/", spec.Handler(serverInterface))
+	r := chi.NewMux()
+	r.Use(middleware.RequestID, middleware.Recoverer, httputils.ChiLogger(logger))
 
-	server := &http.Server{
+	si := api.NewApi(
+		pool,
+		logger,
+		mailpit.NewMailPit(pool),
+	)
+
+	r.Mount("/", spec.Handler(&si))
+
+	srv := &http.Server{
 		Addr:         ":8080",
-		Handler:      router,
+		Handler:      r,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
@@ -77,18 +83,18 @@ func run(ctx context.Context) error {
 	defer func() {
 		const timeout = 30 * time.Second
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-
 		defer cancel()
 
-		if err := server.Shutdown(ctx); err != nil {
-			logger.Error("Failed shutdown server", zap.Error(err))
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.Error("failed to shutdown server", zap.Error(err))
 		}
 	}()
 
 	errChan := make(chan error, 1)
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil {
+		fmt.Println("server starting on:", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil {
 			errChan <- err
 		}
 	}()
